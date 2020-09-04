@@ -4,7 +4,6 @@
 -- Based on https://github.com/jitsi/jitsi-meet/blob/b765adca752c5bda95b15791e8421852c8ab7000/resources/prosody-plugins/mod_auth_token.lua
 
 local async = require "util.async";
-local base64 = require "util.encodings".base64;
 local formdecode = require "util.http".formdecode;
 local generate_uuid = require "util.uuid".generate;
 local http = require "net.http";
@@ -12,6 +11,7 @@ local jwt = require "luajwtjitsi";
 local new_sasl = require "util.sasl".new;
 local sasl = require "util.sasl";
 local sessions = prosody.full_sessions;
+local basexx = require "basexx";
 
 -- Ensure configured
 local uvsUrl = module:get_option("uvs_base_url", nil);
@@ -113,7 +113,8 @@ local function process_and_verify_token(session)
         return false, "bad-request", "Matrix room ID must be given."
     end
 
-    if base64.decode(session.jitsi_room) ~= data.context.matrix.room_id then
+    local decodedRoomId = basexx.from_base32(session.jitsi_room);
+    if decodedRoomId ~= data.context.matrix.room_id then
         return false, "access-denied", "Jitsi room does not match Matrix room"
     end
 
