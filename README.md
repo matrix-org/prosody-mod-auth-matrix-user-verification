@@ -60,7 +60,7 @@ following options:
     }
   },
   "aud": "jitsi",
-  "iss": "app_id",
+  "iss": "issuer",
   "sub": "jitsi.example.com",
   "room": "*"
 }
@@ -72,7 +72,7 @@ For generating the token, note the following:
 * `matrix.token` is an OpenID token from the Matrix C2S API, see [here](https://matrix.org/docs/spec/client_server/r0.6.1#id154).
 * `matrix.room_id` should be the Matrix room ID we want to check the user is in. When base64 encoded it must match the Jitsi room ID.
 * `aud` can be for example "jitsi", should match Prosody token auth issuers/audience if needed.
-* `iss` should be "app_id" (or if changed must matched what is in Prosody config, see below).
+* `iss` issuer of the token, must match `app_id` below in Prosody config.
 * `sub` should be the Jitsi Meet domain.
 * `room` is not used at the moment, a `*` works here.
 
@@ -89,7 +89,8 @@ VirtualHost "example.com"
     authentication = "matrix_user_verification"
 
     -- Must be set for the auth token to be passed through
-    app_id = "app_id"
+    -- Must match what is being set as `iss` in the JWT
+    app_id = "issuer"
 
     -- Base URL to the matrix user verification service (without ending slash)
     uvs_base_url = "https://uvs.example.com"
