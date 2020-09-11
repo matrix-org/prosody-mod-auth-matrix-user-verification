@@ -95,6 +95,12 @@ VirtualHost "example.com"
     uvs_base_url = "https://uvs.example.com"
 ```
 
+The prosody image needs to have the Lua module `http` installed. Install it with LuaRocks:
+
+```
+luarocks install http
+``` 
+
 ## License
 
 Apache 2.0
