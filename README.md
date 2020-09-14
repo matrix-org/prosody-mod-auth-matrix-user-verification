@@ -95,6 +95,14 @@ VirtualHost "example.com"
     uvs_base_url = "https://uvs.example.com"
 ```
 
+The prosody image needs to have the Lua module `http` installed. Install it with LuaRocks:
+
+```
+luarocks install http
+``` 
+
+A Dockerfile [also exists](https://github.com/matrix-org/docker-jitsi-meet/releases/tag/stable-4857-ems.1) with this built in.
+
 ## License
 
 Apache 2.0

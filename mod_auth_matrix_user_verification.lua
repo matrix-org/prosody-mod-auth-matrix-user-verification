@@ -3,15 +3,15 @@
 --
 -- Based on https://github.com/jitsi/jitsi-meet/blob/b765adca752c5bda95b15791e8421852c8ab7000/resources/prosody-plugins/mod_auth_token.lua
 
-local async = require "util.async";
 local formdecode = require "util.http".formdecode;
 local generate_uuid = require "util.uuid".generate;
-local http = require "net.http";
 local jwt = require "luajwtjitsi";
 local new_sasl = require "util.sasl".new;
 local sasl = require "util.sasl";
 local sessions = prosody.full_sessions;
 local basexx = require "basexx";
+local http_request = require "http.request";
+local json = require "util.json";
 
 -- Ensure configured
 local uvsUrl = module:get_option("uvs_base_url", nil);
@@ -76,28 +76,20 @@ function provider.delete_user(username)
 end
 
 local function verify_room_membership(matrix)
-    local wait, done = async.waiter();
-    local result;
-    local function cb(response_body, response_code, response)
-        if response_code == 200 then
-            local data = json.decode(response_body);
-            if data.results and data.results.user == true and data.results.room_membership == true then
-                result = true;
-                done();
-                return;
-            end
+    local request = http_request.new_from_uri(string.format("%s/verify/user_in_room", uvsUrl));
+    request.headers:upsert(":method", "POST");
+    request.headers:upsert("content-type", "application/json");
+    request:set_body(string.format('{"token": "%s", "room_id": "%s"}', matrix.token, matrix.room_id));
+    local headers, stream = assert(request:go());
+    local body = assert(stream:get_body_as_string());
+    local status = headers:get(":status");
+    if status == "200" then
+        local data = json.decode(body);
+        if data.results and data.results.user == true and data.results.room_membership == true then
+            return true;
         end
-        result = false;
-        done();
     end
-
-    local options = {};
-    options.headers = {};
-    options.headers["Content-Type"] = "application/json";
-    options.body = { token = matrix.token, room_id = matrix.room_id };
-    http.request(string.format("%s/verify/user_in_room", uvsUrl), options, cb);
-    wait();
-    return result;
+    return false;
 end
 
 local function process_and_verify_token(session)
