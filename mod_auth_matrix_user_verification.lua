@@ -79,7 +79,14 @@ local function verify_room_membership(matrix)
     local request = http_request.new_from_uri(string.format("%s/verify/user_in_room", uvsUrl));
     request.headers:upsert(":method", "POST");
     request.headers:upsert("content-type", "application/json");
-    request:set_body(string.format('{"token": "%s", "room_id": "%s"}', matrix.token, matrix.room_id));
+    if matrix.server_name ~= nil then
+        request:set_body(string.format(
+            '{"token": "%s", "room_id": "%s", "matrix_server_name": "%s"}',
+            matrix.token, matrix.room_id, matrix.server_name
+        ));
+    else
+        request:set_body(string.format('{"token": "%s", "room_id": "%s"}', matrix.token, matrix.room_id));
+    end
     local headers, stream = assert(request:go());
     local body = assert(stream:get_body_as_string());
     local status = headers:get(":status");
