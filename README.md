@@ -40,7 +40,9 @@ initialized with the following options:
     },
     "matrix": {
       "token": "DX81zuBbR1Qt7WGnyiIQYdqbDSm2ECnx",
-      "room_id": "!qwertyasdfgh:matrix.org"
+      "room_id": "!qwertyasdfgh:matrix.org",
+      // OPTIONAL
+      "server_name": "matrix.org"
     }
   },
   "aud": "jitsi",
@@ -55,6 +57,7 @@ For generating the token, note the following:
 * `content.user` will be used for the Jitsi Meet session.
 * `matrix.token` is an OpenID token from the Matrix C2S API, see [here](https://matrix.org/docs/spec/client_server/r0.6.1#id154).
 * `matrix.room_id` should be the Matrix room ID we want to check the user is in. When base32 encoded (without padding) it must match the Jitsi room ID.
+* `matrix.server_name` (optional) is the server name the `matrix.token` relates to. If not given, we assume UVS will be configured for a single server.
 * `aud` can be for example "jitsi", should match Prosody token auth issuers/audience if needed.
 * `iss` issuer of the token, must match `app_id` below in Prosody config.
 * `sub` should be the Jitsi Meet domain.
