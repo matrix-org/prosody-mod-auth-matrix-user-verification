@@ -82,7 +82,7 @@ local function verify_room_membership(matrix)
     if matrix.server_name ~= nil then
         request:set_body(string.format(
             '{"token": "%s", "room_id": "%s", "matrix_server_name": "%s"}',
-            matrix.token, matrix.room_id, matrix.server_name,
+            matrix.token, matrix.room_id, matrix.server_name
         ));
     else
         request:set_body(string.format('{"token": "%s", "room_id": "%s"}', matrix.token, matrix.room_id));
