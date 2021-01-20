@@ -21,6 +21,7 @@ if uvsUrl == nil then
 else
     module:log("info", string.format("uvs_base_url = %s", uvsUrl));
 end
+local uvsAuthToken = module:get_option("uvs_auth_token", nil);
 
 -- define auth provider
 local provider = {};
@@ -79,6 +80,12 @@ local function verify_room_membership(matrix)
     local request = http_request.new_from_uri(string.format("%s/verify/user_in_room", uvsUrl));
     request.headers:upsert(":method", "POST");
     request.headers:upsert("content-type", "application/json");
+    if uvsAuthToken ~= nil then
+        request.headers:upsert(
+            "authorization",
+            string.format("Bearer %s", uvsAuthToken)
+        )
+    end
     if matrix.server_name ~= nil then
         request:set_body(string.format(
             '{"token": "%s", "room_id": "%s", "matrix_server_name": "%s"}',
