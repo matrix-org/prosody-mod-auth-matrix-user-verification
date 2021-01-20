@@ -96,6 +96,9 @@ VirtualHost "example.com"
 
     -- Base URL to the matrix user verification service (without ending slash)
     uvs_base_url = "https://uvs.example.com"
+    -- (optional) UVS auth token, if authentication enabled
+    -- Uncomment and set the right token if necessary
+    --uvs_auth_token = "changeme"
 ```
 
 The prosody image needs to have the Lua module `http` installed. Install it with LuaRocks:
