@@ -9,7 +9,7 @@ and [Matrix user verification service](https://github.com/matrix-org/matrix-user
 to handle verifying a given Matrix user exists and that they are in a room that
 matches the Jitsi room ID.
 
-Additionally, can amke the verified user an owner of the conference if power level
+Additionally, can make the verified user an owner of the conference if power level
 syncing has been turned on.
 
 ## Flow diagrams
