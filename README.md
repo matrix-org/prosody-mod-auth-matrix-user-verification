@@ -9,6 +9,9 @@ and [Matrix user verification service](https://github.com/matrix-org/matrix-user
 to handle verifying a given Matrix user exists and that they are in a room that
 matches the Jitsi room ID.
 
+Additionally, can amke the verified user an owner of the conference if power level
+syncing has been turned on.
+
 ## Flow diagrams
 
 These diagrams explain how the different components fit together around this Prosody module.
@@ -99,6 +102,13 @@ VirtualHost "example.com"
     -- (optional) UVS auth token, if authentication enabled
     -- Uncomment and set the right token if necessary
     --uvs_auth_token = "changeme"
+    -- (optional) Make Matrix room moderators owners of the Prosody room.
+    -- Enabling this will mean once a participant, authed using this module,
+    -- joins a call, their power in the relevant Matrix room will be checked
+    -- via UVS and if they have more or equal the configured power here,
+    -- they will be made an owner of the Prosody room.
+    -- This is disabled by default, uncomment with a sufficient level below.
+    --uvs_sync_power_levels = true
 ```
 
 The prosody image needs to have the Lua module `http` installed. Install it with LuaRocks:
