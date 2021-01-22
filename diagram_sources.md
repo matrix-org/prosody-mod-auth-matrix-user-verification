@@ -47,7 +47,9 @@ Synapse->UVS: Verification response\nreturns Matrix ID
 UVS->Synapse: Check user in the room\n(Synapse admin API)
 Synapse->UVS: Verification response
 
-UVS->Jitsi: Authentication response\n(returns Matrix ID, if needed)
+UVS->Jitsi: Authentication response\n(returns also Matrix ID and room power levels)
 
 Jitsi->Widget: Join the conference
+
+Jitsi->Jitsi: Make participant conference\nowner if power levels match
 ```

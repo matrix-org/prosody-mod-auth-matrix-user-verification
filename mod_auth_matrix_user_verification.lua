@@ -5,6 +5,7 @@
 
 local formdecode = require "util.http".formdecode;
 local generate_uuid = require "util.uuid".generate;
+local jid = require "util.jid";
 local jwt = require "luajwtjitsi";
 local new_sasl = require "util.sasl".new;
 local sasl = require "util.sasl";
@@ -12,6 +13,7 @@ local sessions = prosody.full_sessions;
 local basexx = require "basexx";
 local http_request = require "http.request";
 local json = require "util.json";
+local um_is_admin = require "core.usermanager".is_admin;
 
 -- Ensure configured
 local uvsUrl = module:get_option("uvs_base_url", nil);
@@ -22,6 +24,7 @@ else
     module:log("info", string.format("uvs_base_url = %s", uvsUrl));
 end
 local uvsAuthToken = module:get_option("uvs_auth_token", nil);
+local uvsSyncPowerLevels = module:get_option("uvs_sync_power_levels", false);
 
 -- define auth provider
 local provider = {};
@@ -52,6 +55,95 @@ end
 module:hook_global("bosh-session", init_session);
 module:hook_global("websocket-session", init_session);
 
+-- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L248
+local function starts_with(str, start)
+    return str:sub(1, #start) == start
+end
+
+--- Extracts the subdomain and room name from internal jid node [foo]room1
+-- @return subdomain(optional, if extracted or nil), the room name
+-- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L239
+local function extract_subdomain(room_node)
+    -- optimization, skip matching if there is no subdomain, no [subdomain] part in the beginning of the node
+    if not starts_with(room_node, '[') then
+        return nil, room_node;
+    end
+
+    return room_node:match("^%[([^%]]+)%](.+)$");
+end
+
+-- healthcheck rooms in jicofo starts with a string '__jicofo-health-check'
+-- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L253
+local function is_healthcheck_room(room_jid)
+    if starts_with(room_jid, "__jicofo-health-check") then
+        return true;
+    end
+
+    return false;
+end
+
+-- Mostly taken from: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/mod_muc_allowners.lua#L63
+local function should_sync_power_level(room, occupant)
+    if is_healthcheck_room(room.jid) or um_is_admin(occupant.jid, host) then
+        return false;
+    end
+
+    local room_node = jid.node(room.jid);
+    -- parses bare room address, for multidomain expected format is:
+    -- [subdomain]roomName@conference.domain
+    local target_subdomain, target_room_name = extract_subdomain(room_node);
+
+    if not (target_room_name == session.jitsi_meet_room) then
+        module:log(
+            'debug',
+            'skip power level sync for auth user and non matching room name: %s, jwt room name: %s',
+            target_room_name,
+            session.jitsi_meet_room
+        );
+        return false;
+    end
+
+    if not (target_subdomain == session.jitsi_meet_context_group) then
+        module:log(
+            'debug',
+            'skip power level sync for auth user and non matching room subdomain: %s, jwt subdomain: %s',
+            target_subdomain,
+            session.jitsi_meet_context_group
+        );
+        return false;
+    end
+
+    return true;
+end
+
+module:hook("muc-occupant-joined", function (event)
+    if not uvsSyncPowerLevels then
+        -- Nothing to do, power level syncing is not enabled.
+        return;
+    end
+
+    local room = event.room;
+    local occupant = event.occupant;
+
+    -- Check if we want to sync power level for this room
+    if not should_sync_power_level(room, occupant) then
+        return;
+    end
+
+    local session = event.origin;
+    if session.auth_matrix_user_verification_is_owner ~= true then
+        module:log(
+            'debug',
+            'skip setting power levels, user is not authed or is not marked as owner of room: %s',
+            room.jid
+        );
+        return;
+    end
+
+    -- Otherwise, set user owner
+    room:set_affiliation(true, occupant.bare_jid, "owner");
+end, 2);
+
 function provider.test_password(username, password)
 	return nil, "Password based auth not supported";
 end
@@ -76,6 +168,8 @@ function provider.delete_user(username)
 	return nil;
 end
 
+-- Check room membership from UVS
+-- Returns boolean(isMember), boolean(isOwner)
 local function verify_room_membership(matrix)
     local request = http_request.new_from_uri(string.format("%s/verify/user_in_room", uvsUrl));
     request.headers:upsert(":method", "POST");
@@ -100,10 +194,16 @@ local function verify_room_membership(matrix)
     if status == "200" then
         local data = json.decode(body);
         if data.results and data.results.user == true and data.results.room_membership == true then
-            return true;
+            if uvsSyncPowerLevels and data.power_levels ~= nil then
+                -- If the user power in the room is at least "state_detault", we mark them as owner
+                if data.power_levels.user >= data.power_levels.room.state_default then
+                    return true, true;
+                end
+            end
+            return true, false;
         end
     end
-    return false;
+    return false, false;
 end
 
 local function process_and_verify_token(session)
@@ -124,12 +224,14 @@ local function process_and_verify_token(session)
         return false, "access-denied", "Jitsi room does not match Matrix room"
     end
 
-    local result = verify_room_membership(data.context.matrix)
+    local isMember, isOwner = verify_room_membership(data.context.matrix)
 
-    if result == false then
-    return false, "access-denied", "Token invalid or not in room";
+    if isMember == false then
+        return false, "access-denied", "Token invalid or not in room";
     end
 
+    -- Store the isOwner detail
+    session.auth_matrix_user_verification_is_owner = isOwner
     -- Store some data in the session from the token
     session.jitsi_meet_context_user = data.context.user;
     session.jitsi_meet_context_features = data.context.features;
