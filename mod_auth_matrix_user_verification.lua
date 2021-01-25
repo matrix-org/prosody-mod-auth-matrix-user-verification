@@ -1,5 +1,16 @@
--- Matrix room membership authentication
--- Copyright (C) 2020 New Vector
+-- Copyright 2020, 2021 The Matrix.org Foundation C.I.C.
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
 --
 -- Based on https://github.com/jitsi/jitsi-meet/blob/b765adca752c5bda95b15791e8421852c8ab7000/resources/prosody-plugins/mod_auth_token.lua
 
@@ -13,7 +24,6 @@ local sessions = prosody.full_sessions;
 local basexx = require "basexx";
 local http_request = require "http.request";
 local json = require "util.json";
-local um_is_admin = require "core.usermanager".is_admin;
 
 -- Ensure configured
 local uvsUrl = module:get_option("uvs_base_url", nil);
@@ -24,7 +34,14 @@ else
     module:log("info", string.format("uvs_base_url = %s", uvsUrl));
 end
 local uvsAuthToken = module:get_option("uvs_auth_token", nil);
+if uvsAuthToken == nil then
+    module:log("info", "No uvs_auth_token supplied, not sending authentication headers");
+else
+    module:log("info", "uvs_auth_token is set");
+end
+
 local uvsSyncPowerLevels = module:get_option("uvs_sync_power_levels", false);
+module:log("info", "uvsSyncPowerLevels = %s", uvsSyncPowerLevels);
 
 -- define auth provider
 local provider = {};
@@ -54,95 +71,6 @@ end
 
 module:hook_global("bosh-session", init_session);
 module:hook_global("websocket-session", init_session);
-
--- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L248
-local function starts_with(str, start)
-    return str:sub(1, #start) == start
-end
-
---- Extracts the subdomain and room name from internal jid node [foo]room1
--- @return subdomain(optional, if extracted or nil), the room name
--- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L239
-local function extract_subdomain(room_node)
-    -- optimization, skip matching if there is no subdomain, no [subdomain] part in the beginning of the node
-    if not starts_with(room_node, '[') then
-        return nil, room_node;
-    end
-
-    return room_node:match("^%[([^%]]+)%](.+)$");
-end
-
--- healthcheck rooms in jicofo starts with a string '__jicofo-health-check'
--- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L253
-local function is_healthcheck_room(room_jid)
-    if starts_with(room_jid, "__jicofo-health-check") then
-        return true;
-    end
-
-    return false;
-end
-
--- Mostly taken from: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/mod_muc_allowners.lua#L63
-local function should_sync_power_level(room, occupant)
-    if is_healthcheck_room(room.jid) or um_is_admin(occupant.jid, host) then
-        return false;
-    end
-
-    local room_node = jid.node(room.jid);
-    -- parses bare room address, for multidomain expected format is:
-    -- [subdomain]roomName@conference.domain
-    local target_subdomain, target_room_name = extract_subdomain(room_node);
-
-    if not (target_room_name == session.jitsi_meet_room) then
-        module:log(
-            'debug',
-            'skip power level sync for auth user and non matching room name: %s, jwt room name: %s',
-            target_room_name,
-            session.jitsi_meet_room
-        );
-        return false;
-    end
-
-    if not (target_subdomain == session.jitsi_meet_context_group) then
-        module:log(
-            'debug',
-            'skip power level sync for auth user and non matching room subdomain: %s, jwt subdomain: %s',
-            target_subdomain,
-            session.jitsi_meet_context_group
-        );
-        return false;
-    end
-
-    return true;
-end
-
-module:hook("muc-occupant-joined", function (event)
-    if not uvsSyncPowerLevels then
-        -- Nothing to do, power level syncing is not enabled.
-        return;
-    end
-
-    local room = event.room;
-    local occupant = event.occupant;
-
-    -- Check if we want to sync power level for this room
-    if not should_sync_power_level(room, occupant) then
-        return;
-    end
-
-    local session = event.origin;
-    if session.auth_matrix_user_verification_is_owner ~= true then
-        module:log(
-            'debug',
-            'skip setting power levels, user is not authed or is not marked as owner of room: %s',
-            room.jid
-        );
-        return;
-    end
-
-    -- Otherwise, set user owner
-    room:set_affiliation(true, occupant.bare_jid, "owner");
-end, 2);
 
 function provider.test_password(username, password)
 	return nil, "Password based auth not supported";
@@ -175,11 +103,13 @@ local function verify_room_membership(matrix)
     request.headers:upsert(":method", "POST");
     request.headers:upsert("content-type", "application/json");
     if uvsAuthToken ~= nil then
+        module:log("debug", "Setting authentication header with Bearer token");
         request.headers:upsert(
             "authorization",
             string.format("Bearer %s", uvsAuthToken)
         )
     end
+    module:log("info", "Found matrix %s %s", matrix.room_id, matrix.server_name);
     if matrix.server_name ~= nil then
         request:set_body(string.format(
             '{"token": "%s", "room_id": "%s", "matrix_server_name": "%s"}',
