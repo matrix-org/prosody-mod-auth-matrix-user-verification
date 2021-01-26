@@ -14,7 +14,7 @@ syncing has been turned on.
 
 ## Flow diagrams
 
-These diagrams explain how the different components fit together around this Prosody module.
+These diagrams explain how the different components fit together around these Prosody modules.
 
 ### Jitsi widget creation
 
@@ -85,7 +85,7 @@ An instance of [Matrix user verification service](https://github.com/matrix-org/
 needs to be running and configured to point to the same Synapse server that issues
 the OpenID tokens.
 
-### Prosody configuration
+### Prosody configuration and plugins
 
 Add the auth to your Jitsi Meet Prosody virtualhost section:
 
@@ -111,11 +111,26 @@ VirtualHost "example.com"
     --uvs_sync_power_levels = true
 ```
 
+If you want to sync power levels (ie have `uvs_sync_power_levels` above enabled), 
+you'll also need to add the power level module to your MUC config, for example as follows:
+
+```lua
+Component "conference.example.com" "muc"
+    modules_enabled = {
+        "matrix_power_sync";
+    }
+```
+
+Copy the `mod_auth_matrix_user_verification.lua` and (if needed) `mod_matrix_power_sync.lua`
+files to your Prosody plugins folder.
+
+### Prosody image
+
 The prosody image needs to have the Lua module `http` installed. Install it with LuaRocks:
 
 ```
 luarocks install http
-``` 
+```
 
 A Dockerfile [also exists](https://github.com/matrix-org/docker-jitsi-meet/releases/tag/stable-4857-ems.1) with this built in.
 
