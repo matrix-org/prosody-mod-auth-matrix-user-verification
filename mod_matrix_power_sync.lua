@@ -12,95 +12,64 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-local jid = require "util.jid";
+local jid_bare = require "util.jid".bare;
 local um_is_admin = require "core.usermanager".is_admin;
 
--- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L248
-local function starts_with(str, start)
-    return str:sub(1, #start) == start
+local function is_admin(jid)
+    return um_is_admin(jid, module.host);
 end
 
---- Extracts the subdomain and room name from internal jid node [foo]room1
--- @return subdomain(optional, if extracted or nil), the room name
--- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L239
-local function extract_subdomain(room_node)
-    -- optimization, skip matching if there is no subdomain, no [subdomain] part in the beginning of the node
-    if not starts_with(room_node, '[') then
-        return nil, room_node;
-    end
+-- Adapted from https://github.com/nvonahsen/jitsi-token-moderation-plugin/blob/a5ebdfaa38a6adde6bceba62cfbc5b1693e480b9/mod_token_moderation.lua
+function setupAffiliation(room, origin, stanza)
+    local jid = jid_bare(stanza.attr.from);
+    if origin.auth_matrix_user_verification_is_owner == true or is_admin(jid) then
+        module:log("info", "Setting %s as owner of room %s based on Matrix power levels", jid, room.jid);
+        room:set_affiliation("matrix_power_sync", jid, "owner");
+    else
+        room:set_affiliation("matrix_power_sync", jid, "member");
+    end;
+end;
 
-    return room_node:match("^%[([^%]]+)%](.+)$");
-end
-
--- healthcheck rooms in jicofo starts with a string '__jicofo-health-check'
--- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L253
-local function is_healthcheck_room(room_jid)
-    if starts_with(room_jid, "__jicofo-health-check") then
-        return true;
-    end
-
-    return false;
-end
-
--- Mostly taken from https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/mod_muc_allowners.lua#L63
-local function should_sync_power_level(room, occupant, session)
-    if is_healthcheck_room(room.jid) or um_is_admin(occupant.jid, module.host) then
-        module:log("debug", "should_sync_power_level: no, this is a healthcheck room or occupant is already admin");
-        return false;
-    end
-
-    local room_node = jid.node(room.jid);
-    -- parses bare room address, for multidomain expected format is:
-    -- [subdomain]roomName@conference.domain
-    local target_subdomain, target_room_name = extract_subdomain(room_node);
-
-    if not (target_room_name == session.jitsi_room) then
-        module:log(
-            "debug",
-            "should_sync_power_level: no, room name %s does not match jitsi room name %s",
-            target_room_name,
-            session.jitsi_room
-        );
-        return false;
-    end
-
-    if not (target_subdomain == session.jitsi_meet_context_group) then
-        module:log(
-            "debug",
-            "should_sync_power_level: no, room subdomain does not match jitsi context group",
-            target_subdomain,
-            session.jitsi_meet_context_group
-        );
-        return false;
-    end
-
-    return true;
-end
-
-module:hook("muc-occupant-joined", function (event)
-    module:log(
-        "debug",
-        "muc-occupant-joined: room:%s, occupant:%s, auth_matrix_user_verification_is_owner:%s",
-        event.room.jid,
-        event.occupant.jid,
-        event.origin.auth_matrix_user_verification_is_owner
-    );
-
+-- Hook into room creation to add this wrapper to every new room
+-- Adapted from https://github.com/nvonahsen/jitsi-token-moderation-plugin/blob/a5ebdfaa38a6adde6bceba62cfbc5b1693e480b9/mod_token_moderation.lua
+--
+-- Adds hooks to room creation to:
+-- 1) Allow setting owner of room only via this plugin (stops Jitsi auto-ownering when owners drop out)
+-- 2) Set owner for anyone based on the session.auth_matrix_user_verification_is_owner value, which is set
+--    when the user authenticates. Should it not exist, the user is a normal member.
+module:hook("muc-room-created", function(event)
+    module:log('info', 'Room created, adding mod_matrix_power_sync module code');
     local room = event.room;
-    local occupant = event.occupant;
-    local session = event.origin;
-
-    -- Check if we want to sync power level for this room
-    if not should_sync_power_level(room, occupant, session) then
-        return;
-    end
-
-    if session.auth_matrix_user_verification_is_owner ~= true then
-        return;
-    end
-
-    module:log("info", "Setting %s as owner of room %s based on Matrix power levels", occupant.jid, room.jid);
-
-    -- Otherwise, set user owner
-    room:set_affiliation(true, occupant.bare_jid, "owner");
-end, 2);
+    local _handle_normal_presence = room.handle_normal_presence;
+    local _handle_first_presence = room.handle_first_presence;
+    -- Wrap presence handlers to set affiliations from our way whenever a user joins
+    room.handle_normal_presence = function(thisRoom, origin, stanza)
+        local pres = _handle_normal_presence(thisRoom, origin, stanza);
+        setupAffiliation(thisRoom, origin, stanza);
+        return pres;
+    end;
+    room.handle_first_presence = function(thisRoom, origin, stanza)
+        local pres = _handle_first_presence(thisRoom, origin, stanza);
+        setupAffiliation(thisRoom, origin, stanza);
+        return pres;
+    end;
+    -- Wrap set affilaition to block anything but token setting owner (stop pesky auto-ownering)
+    local _set_affiliation = room.set_affiliation;
+    room.set_affiliation = function(room, actor, jid, affiliation, reason)
+        module:log(
+            "debug",
+            "room.set_affiliation: room:%s, actor:%s, jid:%s, affiliation:%s, reason:%s",
+            room.jid, actor, jid, affiliation, reason
+        );
+        -- let this plugin do whatever it wants
+        if actor == "matrix_power_sync" then
+            return _set_affiliation(room, true, jid, affiliation, reason)
+        -- noone else can assign owner (in order to block prosody/jitsi's built in moderation functionality
+        elseif affiliation == "owner" then
+            return nil, "modify", "not-acceptable"
+        -- keep other affil stuff working as normal (hopefully, haven't needed to use/test any of it)
+        else
+            return _set_affiliation(room, actor, jid, affiliation, reason);
+        end;
+    end;
+end);
