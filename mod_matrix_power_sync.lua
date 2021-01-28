@@ -15,6 +15,21 @@
 local jid_bare = require "util.jid".bare;
 local um_is_admin = require "core.usermanager".is_admin;
 
+-- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L248
+local function starts_with(str, start)
+    return str:sub(1, #start) == start
+end
+
+-- healthcheck rooms in jicofo starts with a string '__jicofo-health-check'
+-- Source: https://github.com/jitsi/jitsi-meet/blob/master/resources/prosody-plugins/util.lib.lua#L253
+local function is_healthcheck_room(room_jid)
+    if starts_with(room_jid, "__jicofo-health-check") then
+        return true;
+    end
+
+    return false;
+end
+
 local function is_admin(jid)
     return um_is_admin(jid, module.host);
 end
@@ -38,6 +53,11 @@ end;
 -- 2) Set owner for anyone based on the session.auth_matrix_user_verification_is_owner value, which is set
 --    when the user authenticates. Should it not exist, the user is a normal member.
 module:hook("muc-room-created", function(event)
+    if is_healthcheck_room(event.room.jid) then
+        module:log("debug", "Skipping adding power sync hooks, this is a healthcheck room");
+        return;
+    end;
+
     module:log('info', 'Room created, adding mod_matrix_power_sync module code');
     local room = event.room;
     local _handle_normal_presence = room.handle_normal_presence;
