@@ -123,34 +123,50 @@ local function verify_room_membership(matrix)
     local status = headers:get(":status");
     if status == "200" then
         local data = json.decode(body);
-        if data.results and data.results.user == true and data.results.room_membership == true then
-            if uvsSyncPowerLevels and data.power_levels ~= nil then
-                -- If the user power in the room is at least "state_detault", we mark them as owner
-                if data.power_levels.user >= data.power_levels.room.state_default then
-                    return true, true;
+        if data.results then
+            if data.results.user == true and data.results.room_membership == true then
+                if uvsSyncPowerLevels and data.power_levels ~= nil then
+                    -- If the user power in the room is at least "state_detault", we mark them as owner
+                    if data.power_levels.user >= data.power_levels.room.state_default then
+                        return true, true;
+                    end
+                end
+                return true, false;
+            else
+                if data.results.user == true and data.results.room_membership == false then
+                    module:log("info", "REQUEST_COMPLETE reason:not_in_room")
+                else
+                    module:log("info", "REQUEST_COMPLETE reason:invalid_token")
                 end
             end
-            return true, false;
+        else
+            module:log("info", "REQUEST_COMPLETE reason:invalid_response")
         end
+    else
+        module:log("info", "REQUEST_COMPLETE reason:exception")
     end
     return false, false;
 end
 
 local function process_and_verify_token(session)
     if session.auth_token == nil then
+        module:log("info", "REQUEST_COMPLETE reason:invalid_auth_token")
         return false, "bad-request", "JWT token must be provided with OpenID token and room ID";
     end
     local data, msg = jwt.decode(session.auth_token);
     if data == nil then
+        module:log("info", "REQUEST_COMPLETE reason:auth_token_decode_issue")
         return false, "bad-request", "JWT token cannot be decoded";
     end
 
     if not data.context.matrix or data.context.matrix.room_id == nil then
+        module:log("info", "REQUEST_COMPLETE reason:missing_matrix_room_id")
         return false, "bad-request", "Matrix room ID must be given."
     end
 
     local decodedRoomId = basexx.from_base32(session.jitsi_room);
     if decodedRoomId ~= data.context.matrix.room_id then
+        module:log("info", "REQUEST_COMPLETE reason:jitsi_and_matrix_room_mismatch")
         return false, "access-denied", "Jitsi room does not match Matrix room"
     end
 
@@ -175,7 +191,7 @@ function provider.get_sasl_handler(session)
         local res, error, reason = process_and_verify_token(session);
 
         if (res == false) then
-            log("warn",
+            module:log("warn",
                 "Error verifying membership err:%s, reason:%s", error, reason);
             session.auth_token = nil;
             return res, error, reason;
@@ -184,7 +200,7 @@ function provider.get_sasl_handler(session)
         local customUsername
             = prosody.events.fire_event("pre-jitsi-authentication", session);
 
-        log("warn", "Custom username: %s", customUsername);
+        module:log("warn", "Custom username: %s", customUsername);
 
         if (customUsername) then
             self.username = customUsername;
@@ -198,7 +214,7 @@ function provider.get_sasl_handler(session)
         else
             self.username = message;
         end
-        log("warn", "self.username: %s", self.username);
+        module:log("warn", "self.username: %s", self.username);
 
         return res;
 	end
@@ -219,6 +235,7 @@ local function anonymous(self, message)
 		if (self.username == nil) then
 			self.username = username;
 		end
+		module:log("info", "REQUEST_COMPLETE reason:ok")
 		return "success";
 	else
 		return "failure", err, msg;
