@@ -4,13 +4,23 @@ Matrix user verification auth for Prosody for Jitsi Meet widget usage.
 
 ## Description
 
+Contains two Prosody modules:
+
+### `mod_auth_matrix_user_verification`
+
 Prosody auth for glue between Jitsi widgets utilizing the Jitsi Meet external API 
 and [Matrix user verification service](https://github.com/matrix-org/matrix-user-verification-service)
 to handle verifying a given Matrix user exists and that they are in a room that
 matches the Jitsi room ID.
 
-Additionally, can make the verified user an owner of the conference if power level
-syncing has been turned on.
+### `mod_matrix_power_sync`
+
+Optional. Ensures that only users who have power level equal to `state_default` or more
+in the room are made owners. Jitsi will not give room ownership to the first joiner
+if they don't have the right power level and auto-owner cycling on owners leaving
+the conference room is disabled.
+
+Requires `mod_auth_matrix_user_verification` to also be enabled to work.
 
 ## Flow diagrams
 
@@ -87,6 +97,9 @@ the OpenID tokens.
 
 ### Prosody configuration and plugins
 
+Copy the `mod_auth_matrix_user_verification.lua` and (if needed) `mod_matrix_power_sync.lua`
+files to your Prosody plugins folder.
+
 Add the auth to your Jitsi Meet Prosody virtualhost section:
 
 ```lua
@@ -107,7 +120,8 @@ VirtualHost "example.com"
     -- joins a call, their power in the relevant Matrix room will be checked
     -- via UVS and if they have more or equal the configured power here,
     -- they will be made an owner of the Prosody room.
-    -- This is disabled by default, uncomment with a sufficient level below.
+    -- This is disabled by default, uncomment to enable below and ensure
+    -- you also add the muc module as below.
     --uvs_sync_power_levels = true
 ```
 
@@ -120,9 +134,6 @@ Component "conference.example.com" "muc"
         "matrix_power_sync";
     }
 ```
-
-Copy the `mod_auth_matrix_user_verification.lua` and (if needed) `mod_matrix_power_sync.lua`
-files to your Prosody plugins folder.
 
 ### Prosody image
 
