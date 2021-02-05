@@ -14,6 +14,7 @@
 --
 -- Based on https://github.com/jitsi/jitsi-meet/blob/b765adca752c5bda95b15791e8421852c8ab7000/resources/prosody-plugins/mod_auth_token.lua
 
+local async = require "util.async";
 local formdecode = require "util.http".formdecode;
 local generate_uuid = require "util.uuid".generate;
 local jid = require "util.jid";
@@ -22,7 +23,7 @@ local new_sasl = require "util.sasl".new;
 local sasl = require "util.sasl";
 local sessions = prosody.full_sessions;
 local basexx = require "basexx";
-local http_request = require "http.request";
+local http = require "net.http";
 local json = require "util.json";
 
 -- Ensure configured
@@ -99,53 +100,62 @@ end
 -- Check room membership from UVS
 -- Returns boolean(isMember), boolean(isOwner)
 local function verify_room_membership(matrix)
-    local request = http_request.new_from_uri(string.format("%s/verify/user_in_room", uvsUrl));
-    request.headers:upsert(":method", "POST");
-    request.headers:upsert("content-type", "application/json");
+    local wait, done = async.waiter();
+    local verified;
+    local moderator;
+    local function cb(response_body, response_code, response)
+        if response_code == 200 then
+            local data = json.decode(response_body);
+            if data.results then
+                if data.results.user == true and data.results.room_membership == true then
+                    if uvsSyncPowerLevels and data.power_levels ~= nil then
+                        -- If the user power in the room is at least "state_detault", we mark them as owner
+                        if data.power_levels.user >= data.power_levels.room.state_default then
+                            verified = true;
+                            moderator = true;
+                            done();
+                            return;
+                        end
+                    end
+                    verified = true;
+                    moderator = false;
+                    done();
+                    return;
+                else
+                    if data.results.user == true and data.results.room_membership == false then
+                        module:log("info", "REQUEST_COMPLETE reason:not_in_room")
+                    else
+                        module:log("info", "REQUEST_COMPLETE reason:invalid_token")
+                    end
+                end
+            else
+                module:log("info", "REQUEST_COMPLETE reason:invalid_response")
+            end
+        else
+            module:log("info", "REQUEST_COMPLETE reason:exception")
+        end
+        verified = false;
+        moderator = false;
+        done();
+    end
+
+    local options = {};
+    options.headers = {};
+    options.headers["Content-Type"] = "application/json";
     if uvsAuthToken ~= nil then
         module:log("debug", "Setting authentication header with Bearer token");
-        request.headers:upsert(
-            "authorization",
-            string.format("Bearer %s", uvsAuthToken)
-        )
+        options.headers["authorization"] = string.format("Bearer %s", uvsAuthToken)
     end
     module:log("info", "Found matrix %s %s", matrix.room_id, matrix.server_name);
     if matrix.server_name ~= nil then
-        request:set_body(string.format(
-            '{"token": "%s", "room_id": "%s", "matrix_server_name": "%s"}',
-            matrix.token, matrix.room_id, matrix.server_name
-        ));
+        options.body = { token = matrix.token, room_id = matrix.room_id, matrix_server_name = matrix.server_name };
     else
-        request:set_body(string.format('{"token": "%s", "room_id": "%s"}', matrix.token, matrix.room_id));
+        options.body = { token = matrix.token, room_id = matrix.room_id };
     end
-    local headers, stream = assert(request:go());
-    local body = assert(stream:get_body_as_string());
-    local status = headers:get(":status");
-    if status == "200" then
-        local data = json.decode(body);
-        if data.results then
-            if data.results.user == true and data.results.room_membership == true then
-                if uvsSyncPowerLevels and data.power_levels ~= nil then
-                    -- If the user power in the room is at least "state_detault", we mark them as owner
-                    if data.power_levels.user >= data.power_levels.room.state_default then
-                        return true, true;
-                    end
-                end
-                return true, false;
-            else
-                if data.results.user == true and data.results.room_membership == false then
-                    module:log("info", "REQUEST_COMPLETE reason:not_in_room")
-                else
-                    module:log("info", "REQUEST_COMPLETE reason:invalid_token")
-                end
-            end
-        else
-            module:log("info", "REQUEST_COMPLETE reason:invalid_response")
-        end
-    else
-        module:log("info", "REQUEST_COMPLETE reason:exception")
-    end
-    return false, false;
+
+    http.request(string.format("%s/verify/user_in_room", uvsUrl), options, cb);
+    wait();
+    return verified, moderator;
 end
 
 local function process_and_verify_token(session)
