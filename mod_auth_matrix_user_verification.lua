@@ -131,7 +131,7 @@ local function verify_room_membership(matrix)
                         return true, true;
                     end
                 end
-                return true, false;
+                return false, false;
             else
                 if data.results.user == true and data.results.room_membership == false then
                     module:log("info", "REQUEST_COMPLETE reason:not_in_room")
