@@ -126,8 +126,9 @@ local function verify_room_membership(matrix)
         if data.results then
             if data.results.user == true and data.results.room_membership == true then
                 if uvsSyncPowerLevels and data.power_levels ~= nil then
+                    module:log("info", "User power level: %d, State default: %d", data.power_levels.user, data.power_levels.room.state_default);
                     -- If the user power in the room is at least "state_detault", we mark them as owner
-                    if data.power_levels.user >= data.power_levels.room.state_default then
+                    if data.power_levels.user ~= nil and data.power_levels.room.state_default ~= nil and data.power_levels.user >= data.power_levels.room.state_default then
                         return true, true;
                     end
                 end
