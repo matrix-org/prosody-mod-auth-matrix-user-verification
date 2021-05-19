@@ -127,10 +127,9 @@ local function verify_room_membership(matrix)
     local wait, done = async.waiter();
     local data;
 
-    -- The request will automatically have a method of POST if a body is included
     local function cb(response_body, response_code, request, response)
-	module:log("debug", "Response code: %d", response_code);
-	module:log("debug", "Response body: %s", response_body);
+        module:log("debug", "Response code: %d", response_code);
+        module:log("debug", "Response body: %s", response_body);
 
         if response_code == 200 then
             -- Deserialise the body
@@ -141,12 +140,13 @@ local function verify_room_membership(matrix)
     end
 
     -- Make the request and pause execution of this function until done is called above
+    -- Note the request will automatically have a method of POST if a body is included
     http.request(string.format("%s/verify/user_in_room", uvsUrl), options, cb);
     wait();
 
     if data == nil or not data.results then
         module:log("info", "REQUEST_COMPLETE reason:invalid_response")
-	return false, false;
+        return false, false;
     end
 
     if data.results.user == true and data.results.room_membership == true then
@@ -156,7 +156,8 @@ local function verify_room_membership(matrix)
                 return true, true;
             end
         end
-	-- The user is in the room, but they're not considered a moderator
+
+        -- The user is in the room, but they're not considered a moderator
         return true, false;
     else
         if data.results.user == true and data.results.room_membership == false then
