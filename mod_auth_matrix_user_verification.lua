@@ -191,10 +191,14 @@ local function process_and_verify_token(session)
         return false, "access-denied", "Jitsi room does not match Matrix room"
     end
 
-    local isMember, isOwner = verify_room_membership(data.context.matrix)
+    local isMember, isOwner = verify_room_membership(data.context.matrix);
 
-    if isMember == false then
+    if isMember ~= true then
         return false, "access-denied", "Token invalid or not in room";
+    end
+
+    if isOwner ~= true then
+        isOwner = false
     end
 
     -- Store the isOwner detail
