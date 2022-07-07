@@ -89,6 +89,8 @@ JSON file containing the following:
 {"auth": "openidtoken-jwt"}
 ```
 
+Similar CORS headers as described in the [Matrix spec](https://spec.matrix.org/unstable/client-server-api/#web-browser-clients) are needed.
+
 ### Matrix User Verification service
 
 An instance of [Matrix user verification service](https://github.com/matrix-org/matrix-user-verification-service)
@@ -100,6 +102,11 @@ the OpenID tokens.
 Copy the `mod_auth_matrix_user_verification.lua` and (if needed) `mod_matrix_power_sync.lua`
 files to your Prosody plugins folder.
 
+The current jitsi-meet version of luajwtjitsi is no longer compatible with this module.
+Download the following files and place them into your `LUA_PATH` (e.g., `/usr/local/lib/lua/5.2/`:
+- [luajwtjitsi.lua](https://raw.githubusercontent.com/jitsi/luajwtjitsi/v2.0/luajwtjitsi.lua) (v2.0)
+- [base64.lua](https://raw.githubusercontent.com/iskolbin/lbase64/master/base64.lua)
+
 Add the auth to your Jitsi Meet Prosody virtualhost section:
 
 ```lua
@@ -108,10 +115,11 @@ VirtualHost "example.com"
 
     -- Must be set for the auth token to be passed through
     -- Must match what is being set as `iss` in the JWT
+    -- For element-web this is the value from jitsi->preferredDomain
     app_id = "issuer"
 
     -- Base URL to the matrix user verification service (without ending slash)
-    uvs_base_url = "https://uvs.example.com"
+    uvs_base_url = "http://127.0.0.1:3000"
     -- (optional) UVS auth token, if authentication enabled
     -- Uncomment and set the right token if necessary
     --uvs_auth_token = "changeme"
