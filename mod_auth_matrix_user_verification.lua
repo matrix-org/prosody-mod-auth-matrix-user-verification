@@ -175,7 +175,11 @@ local function process_and_verify_token(session)
         module:log("info", "REQUEST_COMPLETE reason:invalid_auth_token")
         return false, "bad-request", "JWT token must be provided with OpenID token and room ID";
     end
-    local data, msg = jwt.decode(session.auth_token);
+    if jwt.decode == nil then
+        data, msg = jwt.verify(session.auth_token, "HS256", "notused");
+    else
+	data, msg = jwt.decode(session.auth_token);
+    end
     if data == nil then
         module:log("info", "REQUEST_COMPLETE reason:auth_token_decode_issue")
         return false, "bad-request", "JWT token cannot be decoded";
