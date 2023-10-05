@@ -152,7 +152,13 @@ local function verify_room_membership(matrix)
     if data.results.user == true and data.results.room_membership == true then
         if uvsSyncPowerLevels and data.power_levels ~= nil then
             -- If the user power in the room is at least "state_default", we mark them as owner
-            if data.power_levels.user >= data.power_levels.room.state_default then
+            local effective_state_default = data.power_levels.room.state_default
+            if effective_state_default == nil then
+                -- `state_default` defaults to 50 when not set.
+                -- https://spec.matrix.org/v1.8/client-server-api/#mroompower_levels
+                effective_state_default = 50
+            end
+            if data.power_levels.user >= effective_state_default then
                 return true, true;
             end
         end
